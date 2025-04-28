@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"golang.org/x/crypto/sha3"
 )
 
 // JsonRpcRequest represents an Ethereum JSON-RPC request
@@ -52,7 +53,9 @@ func encodeMethodCall(methodSig string, args []string) (string, error) {
 
 	// Create function signature hash (first 4 bytes of keccak256 hash)
 	methodSignature := functionName + "(" + strings.Join(paramTypes, ",") + ")"
-	methodID := fmt.Sprintf("%x", common.BytesToHash([]byte(methodSignature)).Bytes())[:8]
+	methodID := functionSelector(methodSignature)
+
+	fmt.Println("Method ID:", methodID)
 
 	// If no args, just return the method ID
 	if len(paramTypes) == 0 || len(args) == 0 {
@@ -174,7 +177,7 @@ func formatReturnValues(values []interface{}, returnTypes []string) []string {
 		case common.Address:
 			results[i] = fmt.Sprintf("%s: %s", returnType, v.Hex())
 		case []byte:
-			results[i] = fmt.Sprintf("%s: 0x%s", returnType, hex.EncodeToString(v))
+			results[i] = fmt.Sprintf("%s: %s", returnType, hex.EncodeToString(v))
 		case string:
 			results[i] = fmt.Sprintf("%s: %s", returnType, v)
 		case *big.Int:
@@ -187,6 +190,14 @@ func formatReturnValues(values []interface{}, returnTypes []string) []string {
 	return results
 }
 
+func functionSelector(signature string) string {
+	hasher := sha3.NewLegacyKeccak256()
+	hasher.Write([]byte(signature))
+	hash := hasher.Sum(nil)
+	selector := hash[:4]
+	return fmt.Sprintf("%x", selector)
+}
+
 func main() {
 	scanner := bufio.NewScanner(os.Stdin)
 
@@ -196,7 +207,7 @@ func main() {
 	contractAddress := scanner.Text()
 
 	// Get function signature
-	fmt.Print("Enter function signature (e.g., 'getBalance(address)'): ")
+	fmt.Print("Enter function signature (e.g., getBalance(address)): ")
 	scanner.Scan()
 	functionSig := scanner.Text()
 
@@ -208,6 +219,11 @@ func main() {
 		paramTypes = strings.Split(matches[1], ",")
 	}
 
+	// Get return type
+	fmt.Print("Enter return type (e.g., (uint256,address)): ")
+	scanner.Scan()
+	returnType := scanner.Text()
+
 	// Get arguments
 	var args []string
 	for i, paramType := range paramTypes {
@@ -215,11 +231,6 @@ func main() {
 		scanner.Scan()
 		args = append(args, scanner.Text())
 	}
-
-	// Get return type
-	fmt.Print("Enter return type (e.g., '(uint256,address)'): ")
-	scanner.Scan()
-	returnType := scanner.Text()
 
 	// Get RPC URL
 	fmt.Print("Enter Ethereum RPC URL (default: http://localhost:8545): ")
@@ -235,6 +246,7 @@ func main() {
 		fmt.Printf("Error encoding function call: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Println("Encoded data:", encodedData)
 
 	// Create JSON-RPC request
 	request := JsonRpcRequest{
